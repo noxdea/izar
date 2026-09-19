@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0c0d">
+  <meta name="description" content="Izar is a pure Ruby Git staging workspace for safe status, diff, and staging operations.">
+  <link rel="canonical" href="https://noxdea.github.io/izar/">
+  <title>Izar — Git staging in pure Ruby</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0a0c0d; --panel:#121617; --line:#303637; --text:#f0f1ed; --muted:#a7aaa4; --accent:#d39a72; --ink:#17100c; }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body { margin: 0; min-width: 320px; color: var(--text); background: var(--bg); font: 16px/1.62 "Avenir Next", Avenir, "Segoe UI", sans-serif; }
+    a { color: inherit; }
+    .skip { position: absolute; top: -5rem; left: 1rem; z-index: 20; padding: .65rem .9rem; color: var(--ink); background: var(--accent); }
+    .skip:focus { top: 1rem; }
+    .wrap { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; min-height: 76px; border-bottom: 1px solid var(--line); }
+    .brand { font: 700 1.15rem/1 "DIN Alternate", "Arial Narrow", sans-serif; text-decoration: none; }
+    nav { display: flex; gap: 1.4rem; color: var(--muted); font-size: .9rem; }
+    nav a { text-decoration: none; }
+    nav a:hover { color: var(--text); }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    .hero { display: grid; grid-template-columns: minmax(0, .82fr) minmax(520px, 1.18fr); gap: clamp(3rem, 7vw, 7rem); align-items: center; min-height: 700px; padding: 90px 0; }
+    .context { margin: 0 0 1.2rem; color: var(--accent); font-size: .95rem; }
+    h1, h2 { margin: 0; font-family: "DIN Alternate", "Arial Narrow", sans-serif; font-weight: 700; text-wrap: balance; }
+    h1 { max-width: 10ch; font-size: clamp(3.4rem, 7vw, 6.8rem); line-height: .94; }
+    h2 { font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1.05; }
+    p { text-wrap: pretty; }
+    .lede { max-width: 55ch; margin: 1.6rem 0 0; color: var(--muted); font-size: 1.08rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 2rem; }
+    .button { display: inline-flex; align-items: center; min-height: 44px; padding: .65rem 1rem; border: 1px solid var(--line); text-decoration: none; }
+    .button.primary { border-color: var(--accent); color: var(--ink); background: var(--accent); font-weight: 700; }
+    .workspace { border: 1px solid var(--line); background: var(--panel); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; }
+    .workspace-bar { display: flex; justify-content: space-between; gap: 1rem; padding: .7rem .9rem; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+    .workspace-body { display: grid; grid-template-columns: 190px 1fr; min-height: 430px; }
+    .changes { border-right: 1px solid var(--line); }
+    .group { padding: .9rem .8rem .35rem; color: var(--muted); font-size: .7rem; }
+    .file { padding: .55rem .8rem; border-top: 1px solid rgba(48,54,55,.65); color: var(--muted); font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file.selected { color: var(--text); background: #1a1f20; }
+    .file b { color: var(--accent); font-weight: 600; }
+    .diff { overflow: hidden; padding: 1rem 0; font-size: .73rem; line-height: 1.75; }
+    .diff-title { padding: 0 1rem 1rem; color: var(--text); }
+    .line { display: grid; grid-template-columns: 34px 34px 1fr; padding: 0 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .line code { white-space: pre; }
+    .line.changed { color: var(--accent); background: #1c1815; }
+    .workspace-foot { padding: .65rem .9rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .7rem; }
+    .section { display: grid; grid-template-columns: .72fr 1.28fr; gap: clamp(2rem, 7vw, 7rem); padding: 88px 0; border-top: 1px solid var(--line); }
+    .section-copy { max-width: 38ch; color: var(--muted); }
+    .rows { border-top: 1px solid var(--line); }
+    .row { display: grid; grid-template-columns: 160px 1fr; gap: 1.5rem; padding: 1.35rem 0; border-bottom: 1px solid var(--line); }
+    .row strong { color: var(--accent); font-weight: 600; }
+    .row p { margin: 0; color: var(--muted); }
+    .keys { display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid var(--line); }
+    .key { display: flex; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+    .key:nth-child(odd) { padding-right: 1rem; }
+    .key:nth-child(even) { padding-left: 1rem; border-left: 1px solid var(--line); }
+    kbd { min-width: 2rem; color: var(--accent); font: .8rem/1.6 ui-monospace, monospace; text-align: center; }
+    pre.command { margin: 0; overflow-x: auto; padding: 1.2rem; border: 1px solid var(--line); color: var(--accent); background: var(--panel); font: .9rem/1.7 ui-monospace, "SFMono-Regular", Consolas, monospace; }
+    footer { display: flex; justify-content: space-between; gap: 1rem; padding: 30px 0 46px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+    @media (max-width: 900px) {
+      .hero, .section { grid-template-columns: 1fr; }
+      .hero { min-height: auto; padding: 72px 0; }
+      .workspace { max-width: 680px; }
+    }
+    @media (max-width: 580px) {
+      .wrap { width: min(100% - 24px, 1180px); }
+      nav a:not(:last-child) { display: none; }
+      .workspace-body { grid-template-columns: 120px 1fr; min-height: 360px; }
+      .line { grid-template-columns: 26px 26px 1fr; padding-inline: .55rem; }
+      .row, .keys { grid-template-columns: 1fr; }
+      .row { gap: .35rem; }
+      .key:nth-child(even) { padding-left: 0; border-left: 0; }
+      footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="wrap">
+    <a class="brand" href="./">Izar</a>
+    <nav aria-label="Primary navigation">
+      <a href="#operations">Operations</a>
+      <a href="#keys">Keys</a>
+      <a href="https://github.com/noxdea/izar">Source</a>
+    </nav>
+  </header>
+  <main id="content">
+    <section class="hero wrap">
+      <div>
+        <p class="context">Pure Ruby Git staging</p>
+        <h1>Review the change before it becomes history.</h1>
+        <p class="lede">Izar separates staged, unstaged, and untracked work, then lets you move files or individual hunks without invoking the Git executable.</p>
+        <div class="actions">
+          <a class="button primary" href="https://rubygems.org/gems/izar">Install the gem</a>
+          <a class="button" href="https://github.com/noxdea/izar#quick-start">Read the guide</a>
+        </div>
+      </div>
+      <div class="workspace" aria-label="Izar staging workspace example">
+        <div class="workspace-bar"><span>main ↑0 ↓0</span><span>3 changes</span></div>
+        <div class="workspace-body">
+          <aside class="changes">
+            <div class="group">Staged (1)</div>
+            <div class="file"><b>M</b> README.md</div>
+            <div class="group">Unstaged (1)</div>
+            <div class="file selected"><b>M</b> lib/izar.rb</div>
+            <div class="group">Untracked (1)</div>
+            <div class="file"><b>?</b> notes.txt</div>
+          </aside>
+          <div class="diff">
+            <div class="diff-title">Diff: lib/izar.rb</div>
+            <div class="line"><span>41</span><span>41</span><code>def grouped(filter: nil)</code></div>
+            <div class="line"><span>42</span><span>42</span><code>  changes = status</code></div>
+            <div class="line changed"><span>43</span><span>43</span><code>+ return changes unless filter</code></div>
+            <div class="line"><span>44</span><span>44</span><code>  candidates = changes.map(&amp;:path)</code></div>
+            <div class="line changed"><span>45</span><span>45</span><code>+ matches = Spica.filter(filter, candidates)</code></div>
+            <div class="line"><span>46</span><span>46</span><code>end</code></div>
+          </div>
+        </div>
+        <div class="workspace-foot">space stage · s hunk · c commit · q quit</div>
+      </div>
+    </section>
+    <section class="section wrap" id="operations">
+      <div><h2>Small operations with visible boundaries.</h2><p class="section-copy">The CLI, TUI, and native view share one model, so status and mutations behave the same everywhere.</p></div>
+      <div class="rows">
+        <div class="row"><strong>Inspect</strong><p>Group repository status, filter paths, and view syntax-highlighted diffs.</p></div>
+        <div class="row"><strong>Stage</strong><p>Move a whole path or one hunk between the worktree and index.</p></div>
+        <div class="row"><strong>Protect</strong><p>Require explicit confirmation before discard and reject empty commits.</p></div>
+      </div>
+    </section>
+    <section class="section wrap" id="keys">
+      <div><h2>The staging loop stays under your hands.</h2></div>
+      <div class="keys">
+        <div class="key"><kbd>j/k</kbd><span>Move between files</span></div>
+        <div class="key"><kbd>space</kbd><span>Toggle selected file</span></div>
+        <div class="key"><kbd>s</kbd><span>Toggle selected hunk</span></div>
+        <div class="key"><kbd>a</kbd><span>Stage all changes</span></div>
+        <div class="key"><kbd>c</kbd><span>Commit staged work</span></div>
+        <div class="key"><kbd>X</kbd><span>Confirm discard</span></div>
+      </div>
+    </section>
+    <section class="section wrap">
+      <div><h2>Open a repository workspace.</h2></div>
+      <pre class="command"><code>gem install izar
+izar status --tui</code></pre>
+    </section>
+  </main>
+  <footer class="wrap"><span>Izar 0.1.0</span><span>Ruby 3.2+ · MIT</span></footer>
+</body>
+</html>
