@@ -55,4 +55,17 @@ RSpec.describe Izar do
   ensure
     FileUtils.remove_entry(dir) if dir
   end
+
+  it "filters through the interactive session and exposes messages to the view" do
+    repo, dir = repository
+    File.write(File.join(dir, "notes.txt"), "notes\n")
+    model = Izar::Model.new(dir)
+    session = Izar::TUI::Session.new(model)
+    expect(session.dispatch("/", filter_text: "notes")).to eq(:filter)
+    expect(model.paths).to eq(["notes.txt"])
+    session.dispatch("?")
+    expect(model.message).to include("j/k move")
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
 end

@@ -214,13 +214,14 @@ module Izar
   end
 
   class Model
-    attr_reader :repository, :selected_path, :query, :config
+    attr_reader :repository, :selected_path, :query, :config, :message
 
     def initialize(dir = Dir.pwd, config: Config.load(File.join(dir, ".izar.jsonc")))
       @repository = Repository.new(dir)
       @config = config
       @selected_path = nil
       @query = ""
+      @message = nil
       reload
     end
 
@@ -290,6 +291,10 @@ module Izar
       repository.discard(selected_path, confirm: true) if selected_path
       reload
     end
+
+    def message=(value)
+      @message = value
+    end
   end
 
   module Config
@@ -336,7 +341,7 @@ module Izar
         @message = nil
       end
 
-      def dispatch(key, commit_message: nil, confirm: false)
+      def dispatch(key, commit_message: nil, confirm: false, filter_text: nil)
         action = @keymap&.dispatch(key) || {"j" => :next, "k" => :previous, " " => :stage, "a" => :stage_all,
           "s" => :hunk, "X" => :discard, "c" => :commit, "/" => :filter, "r" => :reload, "?" => :help, "q" => :quit}[key]
         case action
@@ -347,6 +352,8 @@ module Izar
         when :hunk then model.stage_selected_hunk
         when :discard
           confirm ? model.discard_selected : (@message = "discard cancelled")
+        when :filter
+          model.filter(filter_text.to_s)
         when :commit
           begin
             model.repository.commit(commit_message)
@@ -358,9 +365,11 @@ module Izar
         when :help then @message = "j/k move · space stage · a all · s hunk · X discard · c commit · q quit"
         when :quit then return :quit
         end
+        model.message = @message
         action
       rescue Error => error
         @message = error.message
+        model.message = @message
         :error
       end
     end
@@ -385,6 +394,10 @@ module Izar
             output.write("discard #{model.selected_path}? [y/N] ")
             confirm = input.cooked { input.getch.to_s.downcase == "y" }
             result = session.dispatch(key, confirm: confirm)
+          elsif key == "/"
+            output.write("filter: ")
+            query = input.cooked { input.gets.to_s.chomp }
+            result = session.dispatch(key, filter_text: query)
           else
             result = session.dispatch(key)
           end
