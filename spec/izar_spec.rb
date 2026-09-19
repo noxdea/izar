@@ -35,4 +35,24 @@ RSpec.describe Izar do
   ensure
     FileUtils.remove_entry(dir) if dir
   end
+
+  it "unstages a deletion without requiring a worktree stat" do
+    repo, dir = repository
+    File.unlink(File.join(dir, "README.md"))
+    repo.stage("README.md")
+    repo.unstage("README.md")
+    expect(repo.status.map(&:code)).to eq([" D"])
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
+
+  it "dispatches TUI stage actions through the model" do
+    repo, dir = repository
+    File.write(File.join(dir, "README.md"), "changed\n")
+    model = Izar::Model.new(dir)
+    expect(Izar::TUI::Session.new(model).dispatch(" ")).to eq(:stage)
+    expect(repo.status.map(&:code)).to eq(["M "])
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
 end
