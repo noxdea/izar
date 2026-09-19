@@ -37,7 +37,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "antares", "~> 0.2"
-  spec.add_dependency "fiddle"
+  spec.add_dependency "fiddle", "~> 1.1"
   spec.add_dependency "kochab", "~> 0.2"
   spec.add_dependency "porrima", "~> 0.2"
   spec.add_dependency "spica", "~> 0.1"
