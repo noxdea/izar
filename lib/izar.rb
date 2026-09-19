@@ -316,15 +316,16 @@ module Izar
   module TUI
     module_function
 
-    def keymap
+    def keymap(config = Config::DEFAULTS)
       return nil unless defined?(Zaniah::Input::Keymap)
+      bindings = config.fetch("keymap", {})
       Zaniah::Input::Keymap.new
         .bind("j", :next)
         .bind("k", :previous)
-        .bind("space", :stage)
+        .bind(bindings.fetch("stage", "space"), :stage)
         .bind("a", :stage_all)
         .bind("s", :hunk)
-        .bind("c", :commit)
+        .bind(bindings.fetch("commit", "c"), :commit)
         .bind("X", :discard)
         .bind("/", :filter)
         .bind("r", :reload)
@@ -337,13 +338,18 @@ module Izar
 
       def initialize(model)
         @model = model
-        @keymap = TUI.keymap
+        @keymap = TUI.keymap(model.config)
+        @fallback = {"j" => :next, "k" => :previous,
+          model.config.dig("keymap", "stage").to_s => :stage,
+          "a" => :stage_all, "s" => :hunk, "X" => :discard,
+          model.config.dig("keymap", "commit").to_s => :commit,
+          "/" => :filter, "r" => :reload, "?" => :help, "q" => :quit}
+        @fallback[" "] ||= :stage
         @message = nil
       end
 
       def dispatch(key, commit_message: nil, confirm: false, filter_text: nil)
-        action = @keymap&.dispatch(key) || {"j" => :next, "k" => :previous, " " => :stage, "a" => :stage_all,
-          "s" => :hunk, "X" => :discard, "c" => :commit, "/" => :filter, "r" => :reload, "?" => :help, "q" => :quit}[key]
+        action = @keymap&.dispatch(key) || @fallback[key]
         case action
         when :next then model.move(1)
         when :previous then model.move(-1)

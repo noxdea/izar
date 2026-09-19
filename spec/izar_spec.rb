@@ -68,4 +68,15 @@ RSpec.describe Izar do
   ensure
     FileUtils.remove_entry(dir) if dir
   end
+
+  it "honors configured stage and commit keys" do
+    repo, dir = repository
+    File.write(File.join(dir, "README.md"), "changed\n")
+    model = Izar::Model.new(dir, config: Izar::Config::DEFAULTS.merge("keymap" => {"stage" => "t", "commit" => "m"}))
+    session = Izar::TUI::Session.new(model)
+    expect(session.dispatch("t")).to eq(:stage)
+    expect(repo.status.map(&:code)).to eq(["M "])
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
 end
