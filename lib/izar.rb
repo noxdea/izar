@@ -14,6 +14,7 @@ rescue LoadError
 end
 begin
   require "zaniah"
+  require "zaniah/ui"
 rescue LoadError
 end
 require_relative "izar/version"
@@ -200,12 +201,13 @@ module Izar
       staged_to_worktree.flat_map { |hunk| hunk.edits.map { |edit| [edit.kind, edit.text] } }.first(limit)
     end
 
-    def highlight(limit: 50_000)
-      source = []
+    def highlight(lines: nil, limit: 50_000)
+      source = Array(lines || repository.repo.worktree_content(path).to_s.lines).map do |line|
+        line.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace)
+      end
       require "antares"
       require "rouge"
       lexer = Rouge::Lexer.guess(filename: path)
-      source = repository.repo.worktree_content(path).to_s.lines
       highlighter = Antares::Highlighter.new(lexer: lexer, lines: ->(index) { source[index] }, line_count: -> { source.length })
       highlighter.tokens_in(0...[source.length, limit].min)
     rescue LoadError, StandardError
@@ -451,16 +453,34 @@ module Izar
 
     def element(model)
       theme = defined?(Zaniah::Theme) ? Zaniah::Theme.dark : nil
-      lines = [
-        "#{model.repository.branch} · #{model.groups.values.sum(&:length)} changes",
-        *model.groups.flat_map { |name, entries| [name.to_s.capitalize, *entries.map { |change| "#{change.code} #{change.path}" }] },
-        ("Diff: #{model.selected_path}" if model.selected_path),
-        *Array(model.diff&.lines).first(200).map { |kind, text| "#{kind == :insert ? "+" : kind == :delete ? "-" : " "}#{text}" }
-      ].compact
-      element = Zaniah::Div.new.flex_col.p(24).gap(8)
-      element = element.bg(theme.colors.background) if theme
-      lines.each { |line| element = element.child(Zaniah::Text.new(line, size: 16, color: theme&.colors&.text)) }
-      element
+      return Zaniah::UI::EmptyState.new("No changes", message: "Working tree is clean") unless theme
+
+      sidebar = Zaniah::UI::Sidebar.new(width: 280)
+      model.groups.each do |name, entries|
+        sidebar.child(Zaniah::UI::Label.new("#{name.to_s.capitalize} (#{entries.length})", tone: :muted, size: :xs))
+        entries.each do |change|
+          variant = change.path == model.selected_path ? :secondary : :ghost
+          sidebar.child(Zaniah::UI::Button.new("#{change.code} #{change.path}", size: :sm, variant: variant).w_full
+            .on_click { |_event, context| model.select(change.path); context.window.request_frame })
+        end
+      end
+
+      main = Zaniah::Div.new.flex_col.gap(12).p(24).bg(theme.colors.background)
+      main.child(Zaniah::UI::StatusBar.new(
+        Zaniah::UI::Label.new("#{model.repository.branch} · #{model.groups.values.sum(&:length)} changes", size: :sm),
+        Zaniah::UI::Spacer.new,
+        Zaniah::UI::Label.new(model.message.to_s, tone: :muted, size: :xs)
+      ))
+      if model.selected_path && model.diff
+        lines = model.diff.lines(limit: 50_000)
+        main.child(Zaniah::UI::Label.new("Diff: #{model.selected_path}", size: :lg))
+        main.child(Zaniah::UI::ListView.new(lines, height: 680, row_height: 20) do |(kind, text), _index|
+          Zaniah::UI::RichText.new(diff_runs(model, kind, text, theme), selectable: false)
+        end)
+      else
+        main.child(Zaniah::UI::EmptyState.new("Select a change", message: "Choose a file from the sidebar"))
+      end
+      Zaniah::UI::SplitPane.new(sidebar, main, ratio: model.config.fetch("split_ratio", 0.35))
     end
 
     def render(model, out: $stdout)
@@ -477,6 +497,38 @@ module Izar
       end
       out.puts "\n#{model.message}" if model.respond_to?(:message) && model.message
       out.puts "\n[space] stage  [a] all  [s] hunk  [c] commit  [X] discard  [/] filter  [r] reload  [q] quit"
+    end
+
+    def diff_runs(model, kind, text, theme)
+      prefix = kind == :insert ? "+" : kind == :delete ? "-" : " "
+      plain = "#{prefix}#{text}".encode(Encoding::UTF_8, invalid: :replace, undef: :replace)
+      return [{text: plain, color: diff_color(kind, theme)}] unless model.config.dig("diff", "highlight")
+
+      tokens = model.diff.highlight(lines: [text], limit: 1).first || [[nil, text]]
+      [{text: prefix, color: diff_color(kind, theme)}] + tokens.map do |token, value|
+        {text: value.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace), color: token_color(token, kind, theme)}
+      end
+    rescue StandardError
+      [{text: "#{prefix}#{text}".encode(Encoding::UTF_8, invalid: :replace, undef: :replace), color: diff_color(kind, theme)}]
+    end
+
+    def diff_color(kind, theme)
+      case kind
+      when :insert then theme.colors.success
+      when :delete then theme.colors.danger
+      else theme.colors.text
+      end
+    end
+
+    def token_color(token, kind, theme)
+      return diff_color(kind, theme) unless token.respond_to?(:shortname)
+      case token.shortname.to_s
+      when /k|c/ then theme.colors.text_muted
+      when /nb|nc|nf|n/ then theme.colors.accent
+      when /s|dl/ then theme.colors.success
+      when /m|mi|mf/ then theme.colors.warning
+      else theme.colors.text
+      end
     end
   end
 

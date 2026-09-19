@@ -88,4 +88,17 @@ RSpec.describe Izar do
   ensure
     path&.unlink
   end
+
+  it "renders a large highlighted diff through the virtualized view" do
+    repo, dir = repository
+    File.write(File.join(dir, "README.md"), (1..1_000).map { |line| "line #{line}\n" }.join)
+    model = Izar::Model.new(dir)
+    window = Zaniah::Platform.open_window(backend: :headless, width: 1_200, height: 800)
+    window.draw { Izar::View.element(model) }
+    window.tick
+    expect(window.device.pixels).not_to be_empty
+  ensure
+    window&.close
+    FileUtils.remove_entry(dir) if dir
+  end
 end
