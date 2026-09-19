@@ -456,7 +456,7 @@ module Izar
       when :status
         model = Model.new(options[:dir]).filter(options[:filter]) if options[:filter]
         model ||= Model.new(options[:dir])
-        out.puts "izar: GUI backend unavailable; using TUI" if options[:gui] && !input.tty?
+        out.puts "izar: GUI backend unavailable; using TUI" if options[:gui]
         options[:tui] ? TUI.run(model, input: input, output: out) : View.render(model, out: out)
       when :stage then repository.stage(argv.fetch(0)); out.puts "staged #{argv.fetch(0)}"
       when :unstage then repository.unstage(argv.fetch(0)); out.puts "unstaged #{argv.fetch(0)}"
