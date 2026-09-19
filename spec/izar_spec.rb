@@ -101,4 +101,19 @@ RSpec.describe Izar do
     window&.close
     FileUtils.remove_entry(dir) if dir
   end
+
+  it "completes GUI-style staging asynchronously" do
+    repo, dir = repository
+    File.write(File.join(dir, "README.md"), "changed\n")
+    model = Izar::Model.new(dir)
+    expect(model.stage_selected(async: true)).to be(true)
+    100.times do
+      break if model.poll_operation
+      sleep 0.01
+    end
+    expect(model.busy?).to be(false)
+    expect(repo.status.map(&:code)).to eq(["M "])
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
 end

@@ -21,6 +21,25 @@ require_relative "izar/version"
 
 module Izar
   class Error < StandardError; end
+
+  class Operation
+    attr_reader :error
+
+    def initialize(&block)
+      @status = :running
+      @thread = Thread.new do
+        block.call
+      rescue StandardError => error
+        @error = error
+      ensure
+        @status = :done
+      end
+    end
+
+    def running? = @status == :running
+    def done? = @status == :done
+  end
+
   Change = Data.define(:path, :code, :index, :worktree) do
     def staged? = index != " " && index != "?"
     def untracked? = index == "?"
@@ -216,7 +235,7 @@ module Izar
   end
 
   class Model
-    attr_reader :repository, :selected_path, :query, :config, :message
+    attr_reader :repository, :selected_path, :query, :config, :message, :operation
 
     def initialize(dir = Dir.pwd, config: Config.load(File.join(dir, ".izar.jsonc")))
       @repository = Repository.new(dir)
@@ -224,6 +243,7 @@ module Izar
       @selected_path = nil
       @query = ""
       @message = nil
+      @operation = nil
       reload
     end
 
@@ -256,46 +276,71 @@ module Izar
       repository.diff(selected_path, context: context.positive? ? context : 3)
     end
 
-    def stage_selected
-      repository.stage(selected_path) if selected_path
-      reload
+    def stage_selected(async: false)
+      return reload unless selected_path
+      perform(async) { repository.stage(selected_path); reload }
     end
 
-    def unstage_selected
-      repository.unstage(selected_path) if selected_path
-      reload
+    def unstage_selected(async: false)
+      return reload unless selected_path
+      perform(async) { repository.unstage(selected_path); reload }
     end
 
-    def toggle_selected
+    def toggle_selected(async: false)
       return reload unless selected
-      selected.staged? && !selected.unstaged? ? unstage_selected : stage_selected
+      selected.staged? && !selected.unstaged? ? unstage_selected(async: async) : stage_selected(async: async)
     end
 
-    def stage_selected_hunk
+    def stage_selected_hunk(async: false)
       change = selected
       return reload unless change
-      if change.staged? && !change.unstaged?
-        hunks = repository.diff(change.path).head_to_staged
-        repository.diff(change.path).unstage_hunk(hunks.first) if hunks.first
-      else
-        hunks = repository.diff(change.path).staged_to_worktree
-        repository.diff(change.path).stage_hunk(hunks.first) if hunks.first
+      perform(async) do
+        if change.staged? && !change.unstaged?
+          hunks = repository.diff(change.path).head_to_staged
+          repository.diff(change.path).unstage_hunk(hunks.first) if hunks.first
+        else
+          hunks = repository.diff(change.path).staged_to_worktree
+          repository.diff(change.path).stage_hunk(hunks.first) if hunks.first
+        end
+        reload
       end
-      reload
     end
 
-    def stage_all
-      repository.stage_all
-      reload
+    def stage_all(async: false)
+      perform(async) { repository.stage_all; reload }
     end
 
-    def discard_selected
-      repository.discard(selected_path, confirm: true) if selected_path
-      reload
+    def discard_selected(async: false)
+      return reload unless selected_path
+      perform(async) { repository.discard(selected_path, confirm: true); reload }
+    end
+
+    def commit(message, async: false)
+      perform(async) { repository.commit(message); reload }
+    end
+
+    def busy?
+      operation&.running? || false
+    end
+
+    def poll_operation
+      return false unless operation&.done?
+      @message = operation.error.message if operation.error
+      @operation = nil
+      true
     end
 
     def message=(value)
       @message = value
+    end
+
+    private
+
+    def perform(async)
+      return yield unless async
+      return false if busy?
+      @operation = Operation.new { yield }
+      true
     end
   end
 
@@ -366,8 +411,9 @@ module Izar
     class Session
       attr_reader :model, :message
 
-      def initialize(model)
+      def initialize(model, async: false)
         @model = model
+        @async = async
         @keymap = TUI.keymap(model.config)
         @fallback = {"j" => :next, "k" => :previous,
           model.config.dig("keymap", "stage").to_s => :stage,
@@ -383,17 +429,16 @@ module Izar
         case action
         when :next then model.move(1)
         when :previous then model.move(-1)
-        when :stage then model.toggle_selected
-        when :stage_all then model.stage_all
-        when :hunk then model.stage_selected_hunk
+        when :stage then model.toggle_selected(async: @async)
+        when :stage_all then model.stage_all(async: @async)
+        when :hunk then model.stage_selected_hunk(async: @async)
         when :discard
-          confirm ? model.discard_selected : (@message = "discard cancelled")
+          confirm ? model.discard_selected(async: @async) : (@message = "discard cancelled")
         when :filter
           model.filter(filter_text.to_s)
         when :commit
           begin
-            model.repository.commit(commit_message)
-            model.reload
+            model.commit(commit_message, async: @async)
           rescue Error => error
             @message = error.message
           end
@@ -466,11 +511,11 @@ module Izar
       end
 
       main = Zaniah::Div.new.flex_col.gap(12).p(24).bg(theme.colors.background)
-      main.child(Zaniah::UI::StatusBar.new(
-        Zaniah::UI::Label.new("#{model.repository.branch} · #{model.groups.values.sum(&:length)} changes", size: :sm),
-        Zaniah::UI::Spacer.new,
-        Zaniah::UI::Label.new(model.message.to_s, tone: :muted, size: :xs)
-      ))
+      status_children = [Zaniah::UI::Label.new("#{model.repository.branch} · #{model.groups.values.sum(&:length)} changes", size: :sm)]
+      status_children << Zaniah::UI::Spinner.new(size: 14) if model.busy?
+      status_children << Zaniah::UI::Spacer.new
+      status_children << Zaniah::UI::Label.new(model.message.to_s, tone: :muted, size: :xs)
+      main.child(Zaniah::UI::StatusBar.new(*status_children))
       if model.selected_path && model.diff
         lines = model.diff.lines(limit: 50_000)
         main.child(Zaniah::UI::Label.new("Diff: #{model.selected_path}", size: :lg))
@@ -540,8 +585,12 @@ module Izar
       raise Error, "GUI backend unavailable" unless defined?(Zaniah::Platform)
       backend = RUBY_PLATFORM.include?("darwin") ? :mac : RUBY_PLATFORM.match?(/mswin|mingw/) ? :windows : :linux
       window = Zaniah::Platform.open_window(backend: backend, width: 1200, height: 800, title: "Izar")
-      session = TUI::Session.new(model)
+      session = TUI::Session.new(model, async: true)
       window.draw { View.element(model) }
+      window.on_tick do
+        window.request_frame if model.busy?
+        window.request_frame if model.poll_operation
+      end
       window.on_input do |event|
         next unless event.is_a?(Zaniah::Input::KeyDown)
         key = event.keystroke
