@@ -307,9 +307,37 @@ module Izar
       return DEFAULTS unless File.file?(path)
       value = Kochab.parse(File.read(path, encoding: "UTF-8")).value
       raise Error, "Izar config must be an object" unless value.is_a?(Hash)
-      DEFAULTS.merge(value) { |_key, defaults, override| defaults.is_a?(Hash) && override.is_a?(Hash) ? defaults.merge(override) : override }
+      config = DEFAULTS.merge(value) do |_key, defaults, override|
+        defaults.is_a?(Hash) && override.is_a?(Hash) ? defaults.merge(override) : override
+      end
+      validate(config)
+      config
     rescue Kochab::ParseError => error
       raise Error, "invalid config: #{error.message}"
+    end
+
+    def validate(config)
+      unknown = config.keys.map(&:to_s) - DEFAULTS.keys
+      raise Error, "unknown config key: #{unknown.first}" unless unknown.empty?
+      raise Error, "theme must be a string" unless config["theme"].is_a?(String)
+      ratio = config["split_ratio"]
+      raise Error, "split_ratio must be between 0 and 1" unless ratio.is_a?(Numeric) && ratio.finite? && ratio.between?(0, 1)
+      keymap = config["keymap"]
+      raise Error, "keymap must be an object" unless keymap.is_a?(Hash)
+      %w[stage commit].each do |key|
+        value = keymap[key]
+        raise Error, "keymap.#{key} must be a non-empty string" unless value.is_a?(String) && !value.empty?
+      end
+      unknown_keymap = keymap.keys.map(&:to_s) - DEFAULTS["keymap"].keys
+      raise Error, "unknown keymap key: #{unknown_keymap.first}" unless unknown_keymap.empty?
+      diff = config["diff"]
+      raise Error, "diff must be an object" unless diff.is_a?(Hash)
+      context = diff["context"]
+      raise Error, "diff.context must be a non-negative integer" unless context.is_a?(Integer) && context >= 0
+      raise Error, "diff.highlight must be boolean" unless diff["highlight"] == true || diff["highlight"] == false
+      unknown_diff = diff.keys.map(&:to_s) - DEFAULTS["diff"].keys
+      raise Error, "unknown diff key: #{unknown_diff.first}" unless unknown_diff.empty?
+      config
     end
   end
 
@@ -421,6 +449,20 @@ module Izar
   module View
     module_function
 
+    def element(model)
+      theme = defined?(Zaniah::Theme) ? Zaniah::Theme.dark : nil
+      lines = [
+        "#{model.repository.branch} · #{model.groups.values.sum(&:length)} changes",
+        *model.groups.flat_map { |name, entries| [name.to_s.capitalize, *entries.map { |change| "#{change.code} #{change.path}" }] },
+        ("Diff: #{model.selected_path}" if model.selected_path),
+        *Array(model.diff&.lines).first(200).map { |kind, text| "#{kind == :insert ? "+" : kind == :delete ? "-" : " "}#{text}" }
+      ].compact
+      element = Zaniah::Div.new.flex_col.p(24).gap(8)
+      element = element.bg(theme.colors.background) if theme
+      lines.each { |line| element = element.child(Zaniah::Text.new(line, size: 16, color: theme&.colors&.text)) }
+      element
+    end
+
     def render(model, out: $stdout)
       ahead = model.repository.ahead_behind
       out.puts "#{model.repository.branch} ↑#{ahead[:ahead]} ↓#{ahead[:behind]} · #{model.groups.values.sum(&:length)} changes"
@@ -438,6 +480,32 @@ module Izar
     end
   end
 
+  module GUI
+    module_function
+
+    def run(model, output: $stdout)
+      raise Error, "GUI backend unavailable" unless defined?(Zaniah::Platform)
+      backend = RUBY_PLATFORM.include?("darwin") ? :mac : RUBY_PLATFORM.match?(/mswin|mingw/) ? :windows : :linux
+      window = Zaniah::Platform.open_window(backend: backend, width: 1200, height: 800, title: "Izar")
+      session = TUI::Session.new(model)
+      window.draw { View.element(model) }
+      window.on_input do |event|
+        next unless event.is_a?(Zaniah::Input::KeyDown)
+        key = event.keystroke
+        next if %w[c X].include?(key)
+        result = session.dispatch(key)
+        window.request_frame unless result == :quit
+        window.close if result == :quit
+      end
+      window.run
+    rescue StandardError => error
+      output.puts "izar: GUI backend unavailable; using TUI (#{error.message})"
+      TUI.run(model, input: $stdin, output: output)
+    ensure
+      window&.close
+    end
+  end
+
   class CLI
     def self.run(argv, out: $stdout, err: $stderr, input: $stdin)
       options = {dir: Dir.pwd, filter: nil, action: :status, yes: false, tui: false, gui: false}
@@ -447,7 +515,7 @@ module Izar
         opts.on("--filter TEXT") { |v| options[:filter] = v }
         opts.on("--yes") { options[:yes] = true }
         opts.on("--tui") { options[:tui] = true }
-        opts.on("--gui") { options[:gui] = true; options[:tui] = true }
+        opts.on("--gui") { options[:gui] = true }
         opts.on("-m MESSAGE") { |v| options[:message] = v }
       end.parse!(argv)
       options[:action] = argv.shift&.to_sym || :status
@@ -456,8 +524,12 @@ module Izar
       when :status
         model = Model.new(options[:dir]).filter(options[:filter]) if options[:filter]
         model ||= Model.new(options[:dir])
-        out.puts "izar: GUI backend unavailable; using TUI" if options[:gui]
-        options[:tui] ? TUI.run(model, input: input, output: out) : View.render(model, out: out)
+        if options[:gui] && input.tty? && out.tty?
+          GUI.run(model, output: out)
+        else
+          out.puts "izar: GUI backend unavailable; using TUI" if options[:gui]
+          options[:tui] ? TUI.run(model, input: input, output: out) : View.render(model, out: out)
+        end
       when :stage then repository.stage(argv.fetch(0)); out.puts "staged #{argv.fetch(0)}"
       when :unstage then repository.unstage(argv.fetch(0)); out.puts "unstaged #{argv.fetch(0)}"
       when :discard then out.puts repository.discard(argv.fetch(0), confirm: options[:yes]).fetch(:message)

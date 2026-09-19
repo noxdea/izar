@@ -79,4 +79,13 @@ RSpec.describe Izar do
   ensure
     FileUtils.remove_entry(dir) if dir
   end
+
+  it "rejects malformed configuration before key dispatch" do
+    path = Tempfile.new(["izar", ".jsonc"])
+    path.write('{"keymap":{"stage":42}}')
+    path.close
+    expect { Izar::Config.load(path.path) }.to raise_error(Izar::Error, /keymap.stage/)
+  ensure
+    path&.unlink
+  end
 end
