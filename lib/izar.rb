@@ -12,6 +12,10 @@ begin
   require "spica"
 rescue LoadError
 end
+begin
+  require "zaniah"
+rescue LoadError
+end
 require_relative "izar/version"
 
 module Izar
@@ -35,6 +39,16 @@ module Izar
     def branch = repo.branch || "(detached)"
     def head = repo.head
 
+    def ahead_behind
+      return {ahead: 0, behind: 0} unless repo.branch && head
+      upstream = repo.resolve("refs/remotes/origin/#{repo.branch}")
+      return {ahead: 0, behind: 0} unless upstream
+      base = repo.merge_base(head, upstream)
+      {ahead: count_until(head, base), behind: count_until(upstream, base)}
+    rescue StandardError
+      {ahead: 0, behind: 0}
+    end
+
     def status
       repo.status.map { |entry| Change.new(path: entry.path, code: entry.code, index: entry.index, worktree: entry.worktree) }
     rescue StandardError => error
@@ -43,7 +57,11 @@ module Izar
 
     def grouped(filter: nil)
       changes = status
-      changes = changes.select { |change| change.path.include?(filter) } if filter && !filter.empty?
+      if filter && !filter.empty?
+        candidates = changes.map(&:path)
+        matches = defined?(Spica) ? Spica.filter(filter, candidates).map(&:candidate) : candidates.select { |path| path.include?(filter) }
+        changes = changes.select { |change| matches.include?(change.path) }
+      end
       {
         staged: changes.select(&:staged?),
         unstaged: changes.select { |change| change.unstaged? && !change.untracked? },
@@ -125,6 +143,12 @@ module Izar
     end
 
     def diff(path, context: 3) = Diff.new(self, path, context: context)
+
+    private
+
+    def count_until(reference, stop)
+      repo.each_commit(reference, limit: 100_000).take_while { |commit| commit.oid != stop }.length
+    end
   end
 
   class Diff
@@ -197,6 +221,58 @@ module Izar
     def selected = groups.values.flatten.find { |change| change.path == selected_path }
   end
 
+  module Config
+    DEFAULTS = {"theme" => "dark", "split_ratio" => 0.35,
+      "keymap" => {"stage" => "space", "commit" => "c"},
+      "diff" => {"context" => 3, "highlight" => true}}.freeze
+    module_function
+
+    def load(path = File.join(Dir.pwd, ".izar.jsonc"))
+      return DEFAULTS unless File.file?(path)
+      value = Kochab.parse(File.read(path, encoding: "UTF-8")).value
+      raise Error, "Izar config must be an object" unless value.is_a?(Hash)
+      DEFAULTS.merge(value) { |_key, defaults, override| defaults.is_a?(Hash) && override.is_a?(Hash) ? defaults.merge(override) : override }
+    rescue Kochab::ParseError => error
+      raise Error, "invalid config: #{error.message}"
+    end
+  end
+
+  module TUI
+    module_function
+
+    def keymap
+      return nil unless defined?(Zaniah::Input::Keymap)
+      Zaniah::Input::Keymap.new
+        .bind("j", :next)
+        .bind("k", :previous)
+        .bind("space", :stage)
+        .bind("s", :hunk)
+        .bind("c", :commit)
+        .bind("X", :discard)
+        .bind("/", :filter)
+        .bind("r", :reload)
+        .bind("?", :help)
+        .bind("q", :quit)
+    end
+
+    def run(model, input: $stdin, output: $stdout)
+      unless input.tty? && output.tty? && defined?(Zaniah::Platform)
+        View.render(model, out: output)
+        return 0
+      end
+      window = Zaniah::Platform.open_window(backend: :tui, input: input, output: output, width: 120, height: 40)
+      window.draw { Zaniah::Div.new.flex_col.p(16).child(Zaniah::Text.new(snapshot(model), size: 16)) }
+      window.run
+      0
+    ensure
+      window&.close
+    end
+
+    def snapshot(model)
+      model.groups.map { |name, entries| "#{name}: #{entries.map(&:path).join(", ")}" }.join("\n")
+    end
+  end
+
   module View
     module_function
 
@@ -217,12 +293,13 @@ module Izar
 
   class CLI
     def self.run(argv, out: $stdout, err: $stderr)
-      options = {dir: Dir.pwd, filter: nil, action: :status, yes: false}
+      options = {dir: Dir.pwd, filter: nil, action: :status, yes: false, tui: false}
       OptionParser.new do |opts|
         opts.banner = "Usage: izar [status|stage|unstage|discard|commit] [PATH]"
         opts.on("-C PATH") { |v| options[:dir] = v }
         opts.on("--filter TEXT") { |v| options[:filter] = v }
         opts.on("--yes") { options[:yes] = true }
+        opts.on("--tui") { options[:tui] = true }
         opts.on("-m MESSAGE") { |v| options[:message] = v }
       end.parse!(argv)
       options[:action] = argv.shift&.to_sym || :status
@@ -230,7 +307,8 @@ module Izar
       case options[:action]
       when :status
         model = Model.new(options[:dir]).filter(options[:filter]) if options[:filter]
-        View.render(model || Model.new(options[:dir]), out: out)
+        model ||= Model.new(options[:dir])
+        options[:tui] ? TUI.run(model, output: out) : View.render(model, out: out)
       when :stage then repository.stage(argv.fetch(0)); out.puts "staged #{argv.fetch(0)}"
       when :unstage then repository.unstage(argv.fetch(0)); out.puts "unstaged #{argv.fetch(0)}"
       when :discard then out.puts repository.discard(argv.fetch(0), confirm: options[:yes]).fetch(:message)
