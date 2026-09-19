@@ -190,8 +190,19 @@ module Izar
       raise Error, "cannot unstage hunk: #{error.message}"
     end
 
-    def lines
-      staged_to_worktree.flat_map { |hunk| hunk.edits.map { |edit| [edit.kind, edit.text] } }
+    def lines(limit: 50_000)
+      staged_to_worktree.flat_map { |hunk| hunk.edits.map { |edit| [edit.kind, edit.text] } }.first(limit)
+    end
+
+    def highlight(limit: 50_000)
+      require "antares"
+      require "rouge"
+      lexer = Rouge::Lexer.guess(filename: path)
+      source = repository.repo.worktree_content(path).to_s.lines
+      highlighter = Antares::Highlighter.new(lexer: lexer, lines: ->(index) { source[index] }, line_count: -> { source.length })
+      highlighter.tokens_in(0...[source.length, limit].min)
+    rescue LoadError, StandardError
+      source.to_a.first(limit).map { |line| [[nil, line]] }
     end
   end
 
