@@ -17,6 +17,10 @@ begin
   require "zaniah/ui"
 rescue LoadError
 end
+begin
+  require "auva"
+rescue LoadError
+end
 require_relative "izar/version"
 
 module Izar
@@ -388,6 +392,19 @@ module Izar
     end
   end
 
+  module Theme
+    module_function
+
+    def resolve(value)
+      return value if value.respond_to?(:colors)
+      return Auva.load(value) if defined?(Auva) && File.file?(value.to_s)
+      return Auva.builtin(value) if defined?(Auva)
+      Zaniah::Theme.public_send(value.to_s)
+    rescue StandardError
+      raise Error, "unknown theme: #{value}"
+    end
+  end
+
   module TUI
     module_function
 
@@ -497,7 +514,7 @@ module Izar
     module_function
 
     def element(model)
-      theme = defined?(Zaniah::Theme) ? Zaniah::Theme.dark : nil
+      theme = defined?(Zaniah::Theme) ? Theme.resolve(model.config.fetch("theme", "dark")) : nil
       return Zaniah::UI::EmptyState.new("No changes", message: "Working tree is clean") unless theme
 
       sidebar = Zaniah::UI::Sidebar.new(width: 280)
@@ -584,7 +601,9 @@ module Izar
     def run(model, output: $stdout)
       raise Error, "GUI backend unavailable" unless defined?(Zaniah::Platform)
       backend = RUBY_PLATFORM.include?("darwin") ? :mac : RUBY_PLATFORM.match?(/mswin|mingw/) ? :windows : :linux
-      window = Zaniah::Platform.open_window(backend: backend, width: 1200, height: 800, title: "Izar")
+      app = Zaniah::App.new
+      window = app.open_window(backend: backend, width: 1200, height: 800, title: "Izar")
+      app.global(:theme, Theme.resolve(model.config.fetch("theme", "dark")))
       session = TUI::Session.new(model, async: true)
       window.draw { View.element(model) }
       window.on_tick do

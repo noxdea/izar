@@ -89,6 +89,11 @@ RSpec.describe Izar do
     path&.unlink
   end
 
+  it "resolves the configured UI theme" do
+    expect(Izar::Theme.resolve("light")).to eq(Zaniah::Theme.light)
+    expect { Izar::Theme.resolve("unknown") }.to raise_error(Izar::Error, /unknown theme/)
+  end
+
   it "renders a large highlighted diff through the virtualized view" do
     repo, dir = repository
     File.write(File.join(dir, "README.md"), (1..1_000).map { |line| "line #{line}\n" }.join)
