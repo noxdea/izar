@@ -1,4 +1,16 @@
 module Izar
   VERSION: String
-  # See the writing guide of rbs: https://github.com/ruby/rbs#guides
+  class Error < StandardError
+  end
+  class Repository
+    def initialize: (?String dir) -> void
+    def status: () -> Array[untyped]
+    def stage: (String path) -> String
+    def unstage: (String path) -> String
+    def commit: (String message) -> String
+  end
+  class Diff
+    def staged_to_worktree: () -> Array[untyped]
+    def head_to_staged: () -> Array[untyped]
+  end
 end
