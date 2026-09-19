@@ -474,9 +474,10 @@ module Izar
       if model.selected_path && model.diff
         lines = model.diff.lines(limit: 50_000)
         main.child(Zaniah::UI::Label.new("Diff: #{model.selected_path}", size: :lg))
-        main.child(Zaniah::UI::ListView.new(lines, height: 680, row_height: 20) do |(kind, text), _index|
-          Zaniah::UI::RichText.new(diff_runs(model, kind, text, theme), selectable: false)
-        end)
+        main.child(Zaniah::List.new(count: lines.length, estimated_height: 20) do |index|
+          kind, text = lines[index]
+          Zaniah::Div.new.h(20).child(Zaniah::UI::RichText.new(diff_runs(model, kind, text, theme), selectable: false))
+        end.h(680))
       else
         main.child(Zaniah::UI::EmptyState.new("Select a change", message: "Choose a file from the sidebar"))
       end
