@@ -1,0 +1,38 @@
+# frozen_string_literal: true
+
+require "tempfile"
+require "fileutils"
+
+RSpec.describe Izar do
+  def repository
+    dir = Dir.mktmpdir("izar")
+    system("git", "init", "-q", "-b", "main", dir)
+    File.write(File.join(dir, "README.md"), "one\ntwo\n")
+    system("git", "-C", dir, "add", "README.md")
+    system("git", "-C", dir, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "initial")
+    [Izar::Repository.new(dir), dir]
+  end
+
+  it "stages files and applies a single hunk" do
+    repo, dir = repository
+    File.write(File.join(dir, "README.md"), "one\nthree\n")
+    hunk = repo.diff("README.md").staged_to_worktree.fetch(0)
+    repo.diff("README.md").stage_hunk(hunk)
+    expect(repo.status.map(&:code)).to eq(["M "])
+    expect(repo.repo.staged_blob("README.md")).to eq("one\nthree\n")
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
+
+  it "rejects empty commits and protects discard behind confirmation" do
+    repo, dir = repository
+    expect { repo.commit(" ") }.to raise_error(Izar::Error, /empty/)
+    File.write(File.join(dir, "README.md"), "changed\n")
+    expect { repo.discard("README.md") }.to raise_error(Izar::Error, /confirmation/)
+    result = repo.discard("README.md", confirm: true)
+    expect(result[:message]).to include("README.md")
+    expect(File.read(File.join(dir, "README.md"))).to eq("one\ntwo\n")
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
+end
