@@ -28,6 +28,8 @@ operations. It builds on [Thuban](https://github.com/noxdea/thuban) and
 [Porrima](https://github.com/noxdea/porrima) without invoking the `git`
 executable.
 
+![Izar reviewing staged, unstaged, and untracked files alongside a highlighted Ruby diff](docs/media/overview.png)
+
 ## Features
 
 - **Clear status groups** — staged, unstaged, and untracked files stay separate.
