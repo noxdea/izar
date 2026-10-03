@@ -1,0 +1,46 @@
+title: Izar
+description: Review Git changes, stage files and hunks, and commit from the terminal.
+url: https://noxdea.github.io
+baseurl: /izar
+repository: noxdea/izar
+markdown: kramdown
+plugins:
+  - jekyll-relative-links
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+defaults:
+  - scope:
+      path: docs
+    values:
+      layout: guide
+guide:
+  - title: Getting started
+    url: /docs/
+  - title: Reviewing and staging
+    url: /docs/usage.html
+  - title: Configuration
+    url: /docs/configuration.html
+  - title: Repository API
+    url: /docs/repository-api.html
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - Rakefile
+  - izar.gemspec
+  - izar-0.1.0.gem
+  - README.md
+  - CHANGELOG.md
+  - LICENSE.txt
+  - bench
+  - bin
+  - demo
+  - docs/adr
+  - exe
+  - lib
+  - pkg
+  - sig
+  - spec
+  - test
+  - tools
+  - tmp

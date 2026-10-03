@@ -66,7 +66,7 @@
     }
     @media (max-width: 580px) {
       .wrap { width: min(100% - 24px, 1180px); }
-      nav a:not(:last-child) { display: none; }
+      nav a[href^="#"] { display: none; }
       .workspace-body { grid-template-columns: 120px 1fr; min-height: 360px; }
       .line { grid-template-columns: 26px 26px 1fr; padding-inline: .55rem; }
       .row, .keys { grid-template-columns: 1fr; }
@@ -83,7 +83,7 @@
     <nav aria-label="Primary navigation">
       <a href="#operations">Operations</a>
       <a href="#keys">Keys</a>
-      <a href="https://github.com/noxdea/izar">Source</a>
+      <a href="docs/">User guide</a><a href="https://github.com/noxdea/izar">Source</a>
     </nav>
   </header>
   <main id="content">
@@ -94,7 +94,7 @@
         <p class="lede">Izar separates staged, unstaged, and untracked work, then lets you move files or individual hunks without invoking the Git executable.</p>
         <div class="actions">
           <a class="button primary" href="https://rubygems.org/gems/izar">Install the gem</a>
-          <a class="button" href="https://github.com/noxdea/izar#quick-start">Read the guide</a>
+          <a class="button" href="docs/">Read the guide</a>
         </div>
       </div>
       <div class="workspace" aria-label="Izar staging workspace example">
